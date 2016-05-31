@@ -139,27 +139,8 @@ func createRenderStyle(table *Table) *renderStyle {
 	}
 
 	// FIXME: handle actually defined width condition
+	style.calculateCellWidths(table.elements)
 
-	// loop over the rows and cells to calculate widths
-	for _, element := range table.elements {
-		// skip separators
-		if _, ok := element.(*Separator); ok {
-			continue
-		}
-
-		// iterate over cells
-		if row, ok := element.(*Row); ok {
-			for i, cell := range row.cells {
-				// FIXME: need to support sizing with colspan handling
-				if cell.colSpan > 1 {
-					continue
-				}
-				if style.cellWidths[i] < cell.Width() {
-					style.cellWidths[i] = cell.Width()
-				}
-			}
-		}
-	}
 	style.columns = len(style.cellWidths)
 
 	// calculate actual width
@@ -196,6 +177,24 @@ func createRenderStyle(table *Table) *renderStyle {
 	style.Width = width
 
 	return style
+}
+
+func (s *renderStyle) calculateCellWidths(elements []Element) {
+	// loop over the rows and cells to calculate widths
+	for _, element := range elements {
+		// iterate over cells
+		if row, ok := element.(*Row); ok {
+			for i, cell := range row.cells {
+				// FIXME: need to support sizing with colspan handling
+				if cell.colSpan > 1 {
+					continue
+				}
+				if s.cellWidths[i] < cell.Width() {
+					s.cellWidths[i] = cell.Width()
+				}
+			}
+		}
+	}
 }
 
 // CellWidth returns the width of the cell at the supplied index, where the

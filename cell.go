@@ -35,6 +35,7 @@ var (
 type Cell struct {
 	column         int
 	formattedValue string
+	width          int
 	alignment      *tableAlignment
 	colSpan        int
 }
@@ -49,7 +50,12 @@ func CreateCell(v interface{}, style *CellStyle) *Cell {
 }
 
 func createCell(column int, v interface{}, style *CellStyle) *Cell {
-	cell := &Cell{column: column, formattedValue: renderValue(v), colSpan: 1}
+	formattedValue := renderValue(v)
+	width := evalWidth(formattedValue)
+	cell := &Cell{column: column,
+		formattedValue: formattedValue,
+		width:          width,
+		colSpan:        1}
 	if style != nil {
 		cell.alignment = &style.Alignment
 		if style.ColSpan != 0 {
@@ -59,10 +65,16 @@ func createCell(column int, v interface{}, style *CellStyle) *Cell {
 	return cell
 }
 
+func evalWidth(formattedValue string) int {
+	return runewidth.StringWidth(filterColorCodes(formattedValue))
+}
+
 // Width returns the width of the content of the cell, measured in runes as best
 // as possible considering sophisticated Unicode.
+// Width is calculated at Cell creation time from contents.
+// So it should be updated manually if the internal contents are changed.
 func (c *Cell) Width() int {
-	return runewidth.StringWidth(filterColorCodes(c.formattedValue))
+	return c.width
 }
 
 // Filter out terminal bold/color sequences in a string.

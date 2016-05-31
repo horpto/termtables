@@ -517,6 +517,8 @@ func TestTableMultipleAddHeader(t *testing.T) {
 	checkRendersTo(t, table, expected)
 }
 
+var rendered string
+
 func createTestTable() *Table {
 	table := CreateTable()
 	header := []interface{}{}
@@ -538,8 +540,9 @@ func BenchmarkTableRenderTerminal(b *testing.B) {
 	table := createTestTable()
 	table.SetModeTerminal()
 	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
-		table.Render()
+		rendered = table.Render()
 	}
 }
 
@@ -548,7 +551,7 @@ func BenchmarkTableRenderMarkdown(b *testing.B) {
 	table.SetModeMarkdown()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		table.Render()
+		rendered = table.Render()
 	}
 }
 
@@ -557,6 +560,6 @@ func BenchmarkTableRenderHTML(b *testing.B) {
 	table.SetModeHTML()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		table.Render()
+		rendered = table.Render()
 	}
 }

@@ -241,51 +241,55 @@ func (t *Table) Render() string {
 // renderTerminal returns a string representation of a fully rendered table,
 // drawn out for display, with embedded newlines.
 func (t *Table) renderTerminal() string {
-	// Use a placeholder rather than adding titles/headers to the tables
-	// elements or else successive calls will compound them.
-	tt := t.clone()
+	// Save elements that should be before rows.
+	topElements := make([]Element, 0, 5)
 
-	// Initial top line.
-	if !tt.Style.SkipBorder {
-		if tt.title != nil && tt.headers == nil {
-			tt.elements = append([]Element{&Separator{where: LINE_SUBTOP}}, tt.elements...)
-		} else if tt.title == nil && tt.headers == nil {
-			tt.elements = append([]Element{&Separator{where: LINE_TOP}}, tt.elements...)
-		} else {
-			tt.elements = append([]Element{&Separator{where: LINE_INNER}}, tt.elements...)
-		}
+	// If we have a title, write them.
+	if t.title != nil {
+		// match changes to this into renderMarkdown too
+		t.titleCell = CreateCell(t.title, &CellStyle{Alignment: AlignCenter, ColSpan: 999})
+		topElements = append(topElements,
+			&StraightSeparator{where: LINE_TOP},
+			CreateRow([]interface{}{t.titleCell}))
 	}
 
 	// If we have headers, include them.
-	if tt.headers != nil {
-		ne := make([]Element, 2)
-		ne[1] = CreateRow(tt.headers)
-		if tt.title != nil {
-			ne[0] = &Separator{where: LINE_SUBTOP}
+	if t.headers != nil {
+		var ne *Separator
+		if t.title != nil {
+			ne = &Separator{where: LINE_SUBTOP}
 		} else {
-			ne[0] = &Separator{where: LINE_TOP}
+			ne = &Separator{where: LINE_TOP}
 		}
-		tt.elements = append(ne, tt.elements...)
+		topElements = append(topElements, ne, CreateRow(t.headers))
 	}
 
-	// If we have a title, write it.
-	if tt.title != nil {
-		// Match changes to this into renderMarkdown too.
-		tt.titleCell = CreateCell(tt.title, &CellStyle{Alignment: AlignCenter, ColSpan: 999})
-		ne := []Element{
-			&StraightSeparator{where: LINE_TOP},
-			CreateRow([]interface{}{tt.titleCell}),
+	// Initial top line.
+	if !t.Style.SkipBorder {
+		var border *Separator
+		if t.title != nil && t.headers == nil {
+			border = &Separator{where: LINE_SUBTOP}
+		} else if t.title == nil && t.headers == nil {
+			border = &Separator{where: LINE_TOP}
+		} else {
+			border = &Separator{where: LINE_INNER}
 		}
-		tt.elements = append(ne, tt.elements...)
+		topElements = append(topElements, border)
 	}
 
 	// Create a new table from the
 	// generate the runtime style. Must include all cells being printed.
-	style := createRenderStyle(tt)
+	style := createRenderStyle(t)
+	style.calculateCellWidths(topElements)
+
+	var b bytes.Buffer
+	for _, e := range topElements {
+		b.WriteString(e.Render(style))
+		b.WriteString("\n")
+	}
 
 	// Loop over the elements and render them.
-	b := bytes.NewBuffer(nil)
-	for _, e := range tt.elements {
+	for _, e := range t.elements {
 		b.WriteString(e.Render(style))
 		b.WriteString("\n")
 	}
@@ -306,10 +310,7 @@ func (t *Table) renderMarkdown() string {
 	// *do* need a header!  Do not need to markdown-escape contents of
 	// tables as markdown is ignored in there.  Do need to do _something_
 	// with a '|' character shown as a member of a table.
-
 	t.Style.setAsciiBoxStyle()
-
-	firstLines := make([]Element, 0, 2)
 
 	if t.headers == nil {
 		initial := createRenderStyle(t)
@@ -321,32 +322,37 @@ func (t *Table) renderMarkdown() string {
 		}
 	}
 
-	firstLines = append(firstLines, CreateRow(t.headers))
-	// This is a dummy line, swapped out below.
-	firstLines = append(firstLines, firstLines[0])
-	t.elements = append(firstLines, t.elements...)
-	// Generate the runtime style.
-	style := createRenderStyle(t)
-	// We know that the second line is a dummy, we can replace it.
+	headersRow := CreateRow(t.headers)
 	mdRow := CreateRow([]interface{}{})
+	// This is a dummy line, swapped out below.
+	firstLines := []Element{headersRow, mdRow}
+
+	// generate the runtime style
+	style := createRenderStyle(t)
+	style.calculateCellWidths(firstLines)
+	// We know that the second line is a dummy, we can replace it.
 	for i := 0; i < style.columns; i++ {
 		mdRow.AddCell(CreateCell(strings.Repeat("-", style.cellWidths[i]), &CellStyle{}))
 	}
-	t.elements[1] = mdRow
 
-	b := bytes.NewBuffer(nil)
-	// Comes after style is generated, which must come after all width-affecting
-	// changes are in.
+	var b bytes.Buffer
+	// Comes after style is generated, which must come after all
+	// width-affecting changes are in.
 	if t.title != nil {
 		// Markdown doesn't support titles or column spanning; we _should_
 		// escape the title, but doing that to handle all possible forms of
 		// markup would require a heavy dependency, so we punt.
-		b.WriteString("Table: ")
-		b.WriteString(strings.TrimSpace(CreateCell(t.title, &CellStyle{}).Render(style)))
-		b.WriteString("\n\n")
+		b.WriteString("Table: " +
+			strings.TrimSpace(CreateCell(t.title, &CellStyle{}).Render(style)) +
+			"\n\n")
 	}
 
 	// Loop over the elements and render them.
+	for _, e := range firstLines {
+		b.WriteString(e.Render(style))
+		b.WriteString("\n")
+	}
+
 	for _, e := range t.elements {
 		b.WriteString(e.Render(style))
 		b.WriteString("\n")
@@ -357,7 +363,7 @@ func (t *Table) renderMarkdown() string {
 
 // clone returns a copy of the table with the underlying slices being copied;
 // the references to the Elements/cells are left as shallow copies.
-func (t *Table) clone() *Table {
+func (t *Table) Clone() *Table {
 	tt := &Table{outputMode: t.outputMode, Style: t.Style, title: t.title}
 	if t.headers != nil {
 		tt.headers = make([]interface{}, len(t.headers))
